@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Expense Tracker</title>
+    <style>
+        /* Mobile-First Styling */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 100%;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        h2 {
+            font-size: 1.2rem;
+            margin-top: 0;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 8px;
+            color: #222;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            box-sizing: border-box;
+            background: #fff;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-top: 5px;
+            margin-bottom: 30px;
+        }
+        button:active {
+            background-color: #0056b3;
+        }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f9f9f9;
+        }
+        .row:last-child {
+            border-bottom: none;
+        }
+        .total-row {
+            font-weight: bold;
+            font-size: 1.1rem;
+            border-top: 2px solid #eee;
+            padding-top: 10px;
+            margin-top: 5px;
+        }
+        .empty-state {
+            color: #888;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Add Expense</h2>
+        <input type="number" id="amount" placeholder="Amount ($)" step="0.01" inputmode="decimal">
+        <select id="category">
+            <option value="Fast Food">Fast Food</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Misc">Misc</option>
+        </select>
+        <button onclick="addExpense()">Add to Total</button>
+
+        <h2>This Month's Breakdown</h2>
+        <div id="monthly-summary">
+            </div>
+
+        <h2 style="margin-top: 30px;">Past 12 Months</h2>
+        <div id="yearly-summary">
+            </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'mobile_expense_data';
+
+        // Retrieve data from local storage
+        function loadData() {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        }
+
+        // Save data to local storage
+        function saveData(data) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        // Get the current month in YYYY-MM format
+        function getCurrentMonthKey() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        // Enforce the 12-month rolling limit
+        function enforce12MonthLimit(data) {
+            const months = Object.keys(data).sort(); // Sorts chronologically
+            if (months.length > 12) {
+                const excess = months.length - 12;
+                for (let i = 0; i < excess; i++) {
+                    delete data[months[i]]; // Delete the oldest month(s)
+                }
+            }
+            return data;
+        }
+
+        // Handle the button click
+        function addExpense() {
+            const amountInput = document.getElementById('amount');
+            const categoryInput = document.getElementById('category');
+            
+            const amount = parseFloat(amountInput.value);
+            const category = categoryInput.value;
+
+            if (isNaN(amount) || amount <= 0) {
+                alert("Please enter a valid positive amount.");
+                return;
+            }
+
+            let data = loadData();
+            let monthKey = getCurrentMonthKey();
+
+            // Initialize month and category if they don't exist yet
+            if (!data[monthKey]) data[monthKey] = {};
+            if (!data[monthKey][category]) data[monthKey][category] = 0;
+
+            // Add the new amount
+            data[monthKey][category] += amount;
+
+            // Clean up old data and save
+            data = enforce12MonthLimit(data);
+            saveData(data);
+
+            // Reset input and refresh UI
+            amountInput.value = '';
+            updateUI();
+        }
+
+        // Render the data to the screen
+        function updateUI() {
+            const data = loadData();
+            const currentMonthKey = getCurrentMonthKey();
+
+            // --- Render Current Month ---
+            const monthlyDiv = document.getElementById('monthly-summary');
+            monthlyDiv.innerHTML = '';
+            let currentMonthTotal = 0;
+
+            if (data[currentMonthKey]) {
+                for (const [cat, amt] of Object.entries(data[currentMonthKey])) {
+                    monthlyDiv.innerHTML += `<div class="row"><span>${cat}</span><span>$${amt.toFixed(2)}</span></div>`;
+                    currentMonthTotal += amt;
+                }
+                monthlyDiv.innerHTML += `<div class="row total-row"><span>Total</span><span>$${currentMonthTotal.toFixed(2)}</span></div>`;
+            } else {
+                monthlyDiv.innerHTML = '<div class="empty-state">No expenses logged yet this month.</div>';
+            }
+
+            // --- Render Past 12 Months ---
+            const yearlyDiv = document.getElementById('yearly-summary');
+            yearlyDiv.innerHTML = '';
+            
+            // Get all months, sort them backwards (newest first)
+            const sortedMonths = Object.keys(data).sort().reverse();
+
+            if (sortedMonths.length === 0) {
+                yearlyDiv.innerHTML = '<div class="empty-state">No historical data yet.</div>';
+            } else {
+                sortedMonths.forEach(month => {
+                    let monthTotal = 0;
+                    for (const amt of Object.values(data[month])) {
+                        monthTotal += amt;
+                    }
+                    yearlyDiv.innerHTML += `<div class="row"><span>${month}</span><span>$${monthTotal.toFixed(2)}</span></div>`;
+                });
+            }
+        }
+
+        // Initialize the UI on first load
+        updateUI();
+    </script>
+</body>
+</html>
