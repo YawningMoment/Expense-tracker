@@ -41,26 +41,58 @@
             outline: none;
             border-color: #007bff;
         }
-        button {
+        button.add-btn {
             background-color: #007bff;
             color: white;
             border: none;
             font-weight: 600;
             font-size: 1.1rem;
             margin-top: 5px;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
-        button:active {
+        button.add-btn:active {
             background-color: #0056b3;
+        }
+        button.delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            width: auto;
+            margin: 0;
+            font-weight: bold;
+        }
+        button.delete-btn:active {
+            background-color: #a71d2a;
         }
         .row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 8px 0;
             border-bottom: 1px solid #f9f9f9;
         }
         .row:last-child {
             border-bottom: none;
+        }
+        .log-row {
+            font-size: 0.9rem;
+            background: #fafafa;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border: 1px solid #eee;
+        }
+        .log-details {
+            display: flex;
+            flex-direction: column;
+        }
+        .log-date {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 2px;
         }
         .total-row {
             font-weight: bold;
@@ -73,6 +105,10 @@
             color: #888;
             font-style: italic;
             font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+        .section-spacer {
+            margin-top: 30px;
         }
     </style>
 </head>
@@ -87,31 +123,46 @@
             <option value="Entertainment">Entertainment</option>
             <option value="Misc">Misc</option>
         </select>
-        <button onclick="addExpense()">Add to Total</button>
+        <button class="add-btn" onclick="addExpense()">Add to Total</button>
 
-        <h2>This Month's Breakdown</h2>
+        <h2>Recent Transactions</h2>
+        <div id="recent-logs">
+            </div>
+
+        <h2 class="section-spacer">This Month's Breakdown</h2>
         <div id="monthly-summary">
             </div>
 
-        <h2 style="margin-top: 30px;">Past 12 Months</h2>
+        <h2 class="section-spacer">Past 12 Months</h2>
         <div id="yearly-summary">
             </div>
     </div>
 
     <script>
         const STORAGE_KEY = 'mobile_expense_data';
+        const HISTORY_KEY = 'mobile_expense_history';
 
-        // Retrieve data from local storage
+        // Retrieve monthly aggregate data
         function loadData() {
             return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
         }
 
-        // Save data to local storage
+        // Save monthly aggregate data
         function saveData(data) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         }
 
-        // Get the current month in YYYY-MM format
+        // Retrieve transaction history
+        function loadHistory() {
+            return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+        }
+
+        // Save transaction history
+        function saveHistory(history) {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        }
+
+        // Get current month in YYYY-MM format
         function getCurrentMonthKey() {
             const now = new Date();
             return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -119,17 +170,17 @@
 
         // Enforce the 12-month rolling limit
         function enforce12MonthLimit(data) {
-            const months = Object.keys(data).sort(); // Sorts chronologically
+            const months = Object.keys(data).sort();
             if (months.length > 12) {
                 const excess = months.length - 12;
                 for (let i = 0; i < excess; i++) {
-                    delete data[months[i]]; // Delete the oldest month(s)
+                    delete data[months[i]];
                 }
             }
             return data;
         }
 
-        // Handle the button click
+        // Add a new expense
         function addExpense() {
             const amountInput = document.getElementById('amount');
             const categoryInput = document.getElementById('category');
@@ -143,35 +194,98 @@
             }
 
             let data = loadData();
+            let history = loadHistory();
             let monthKey = getCurrentMonthKey();
 
-            // Initialize month and category if they don't exist yet
+            // 1. Save to Monthly Aggregates
             if (!data[monthKey]) data[monthKey] = {};
             if (!data[monthKey][category]) data[monthKey][category] = 0;
-
-            // Add the new amount
             data[monthKey][category] += amount;
 
-            // Clean up old data and save
             data = enforce12MonthLimit(data);
             saveData(data);
+
+            // 2. Save to Transaction History (with unique ID)
+            const newLog = {
+                id: Date.now(),
+                month: monthKey,
+                category: category,
+                amount: amount,
+                dateStr: new Date().toLocaleString()
+            };
+            
+            history.unshift(newLog); // Add to beginning of array
+            if (history.length > 20) history.pop(); // Only keep the last 20 logs to save space
+            saveHistory(history);
 
             // Reset input and refresh UI
             amountInput.value = '';
             updateUI();
         }
 
-        // Render the data to the screen
+        // Delete a specific expense
+        function deleteExpense(id) {
+            let history = loadHistory();
+            let data = loadData();
+
+            // Find the item to delete
+            const logIndex = history.findIndex(item => item.id === id);
+            
+            if (logIndex > -1) {
+                const log = history[logIndex];
+                
+                // 1. Subtract from monthly aggregate
+                if (data[log.month] && data[log.month][log.category]) {
+                    data[log.month][log.category] -= log.amount;
+                    
+                    // Clean up floating point math errors and empty categories
+                    if (data[log.month][log.category] <= 0.01) {
+                        delete data[log.month][log.category];
+                    }
+                }
+                
+                // 2. Remove from history array
+                history.splice(logIndex, 1);
+                
+                // Save updates
+                saveData(data);
+                saveHistory(history);
+                updateUI();
+            }
+        }
+
+        // Render the UI
         function updateUI() {
             const data = loadData();
+            const history = loadHistory();
             const currentMonthKey = getCurrentMonthKey();
+
+            // --- Render Recent Logs ---
+            const logsDiv = document.getElementById('recent-logs');
+            logsDiv.innerHTML = '';
+
+            if (history.length === 0) {
+                logsDiv.innerHTML = '<div class="empty-state">No recent transactions.</div>';
+            } else {
+                history.forEach(log => {
+                    logsDiv.innerHTML += `
+                        <div class="row log-row">
+                            <div class="log-details">
+                                <strong>${log.category}: $${log.amount.toFixed(2)}</strong>
+                                <span class="log-date">${log.dateStr}</span>
+                            </div>
+                            <button class="delete-btn" onclick="deleteExpense(${log.id})">Delete</button>
+                        </div>
+                    `;
+                });
+            }
 
             // --- Render Current Month ---
             const monthlyDiv = document.getElementById('monthly-summary');
             monthlyDiv.innerHTML = '';
             let currentMonthTotal = 0;
 
-            if (data[currentMonthKey]) {
+            if (data[currentMonthKey] && Object.keys(data[currentMonthKey]).length > 0) {
                 for (const [cat, amt] of Object.entries(data[currentMonthKey])) {
                     monthlyDiv.innerHTML += `<div class="row"><span>${cat}</span><span>$${amt.toFixed(2)}</span></div>`;
                     currentMonthTotal += amt;
@@ -185,7 +299,6 @@
             const yearlyDiv = document.getElementById('yearly-summary');
             yearlyDiv.innerHTML = '';
             
-            // Get all months, sort them backwards (newest first)
             const sortedMonths = Object.keys(data).sort().reverse();
 
             if (sortedMonths.length === 0) {
@@ -196,12 +309,14 @@
                     for (const amt of Object.values(data[month])) {
                         monthTotal += amt;
                     }
-                    yearlyDiv.innerHTML += `<div class="row"><span>${month}</span><span>$${monthTotal.toFixed(2)}</span></div>`;
+                    if (monthTotal > 0.01) { // Only show months with actual totals
+                        yearlyDiv.innerHTML += `<div class="row"><span>${month}</span><span>$${monthTotal.toFixed(2)}</span></div>`;
+                    }
                 });
             }
         }
 
-        // Initialize the UI on first load
+        // Initialize UI
         updateUI();
     </script>
 </body>
