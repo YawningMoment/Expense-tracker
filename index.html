@@ -36,6 +36,7 @@
             font-size: 16px;
             box-sizing: border-box;
             background: #fff;
+            appearance: auto;
         }
         input:focus, select:focus {
             outline: none;
@@ -52,6 +53,18 @@
         }
         button.add-btn:active {
             background-color: #0056b3;
+        }
+        button.budget-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-top: 5px;
+            margin-bottom: 20px;
+        }
+        button.budget-btn:active {
+            background-color: #1e7e34;
         }
         button.delete-btn {
             background-color: #dc3545;
@@ -77,6 +90,29 @@
         .row:last-child {
             border-bottom: none;
         }
+        .breakdown-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #f9f9f9;
+        }
+        .breakdown-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1rem;
+        }
+        .budget-details {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .over-budget {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .under-budget {
+            color: #28a745;
+        }
         .log-row {
             font-size: 0.9rem;
             background: #fafafa;
@@ -100,6 +136,8 @@
             border-top: 2px solid #eee;
             padding-top: 10px;
             margin-top: 5px;
+            display: flex;
+            justify-content: space-between;
         }
         .empty-state {
             color: #888;
@@ -108,7 +146,7 @@
             margin-bottom: 15px;
         }
         .section-spacer {
-            margin-top: 30px;
+            margin-top: 35px;
         }
     </style>
 </head>
@@ -117,74 +155,85 @@
     <div class="container">
         <h2>Add Expense</h2>
         <input type="number" id="amount" placeholder="Amount ($)" step="0.01" inputmode="decimal">
-        <select id="category">
-            <option value="Fast Food">Fast Food</option>
-            <option value="Grocery">Grocery</option>
-            <option value="Entertainment">Entertainment</option>
-            <option value="Misc">Misc</option>
-        </select>
+        <select id="category"></select>
         <button class="add-btn" onclick="addExpense()">Add to Total</button>
-
-        <h2>Recent Transactions</h2>
-        <div id="recent-logs">
-            </div>
 
         <h2 class="section-spacer">This Month's Breakdown</h2>
         <div id="monthly-summary">
-            </div>
+            <!-- Populated by JS -->
+        </div>
+
+        <h2 class="section-spacer">Recent Transactions</h2>
+        <div id="recent-logs">
+            <!-- Populated by JS -->
+        </div>
+
+        <h2 class="section-spacer">Set Monthly Budgets</h2>
+        <select id="budget-category"></select>
+        <input type="number" id="budget-amount" placeholder="Limit ($) - Leave blank to remove" step="0.01" inputmode="decimal">
+        <button class="budget-btn" onclick="setBudget()">Set Budget</button>
 
         <h2 class="section-spacer">Past 12 Months</h2>
         <div id="yearly-summary">
-            </div>
+            <!-- Populated by JS -->
+        </div>
     </div>
 
     <script>
         const STORAGE_KEY = 'mobile_expense_data';
         const HISTORY_KEY = 'mobile_expense_history';
+        const BUDGETS_KEY = 'mobile_expense_budgets';
 
-        // Retrieve monthly aggregate data
-        function loadData() {
-            return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        // Master List of Categories
+        const CATEGORIES = [
+            "Bills", "Dining Out", "Entertainment", "Fast Food", "Gas", 
+            "Gifts", "Grocery", "Health/Medical", "Insurance", "Misc", 
+            "Online Shopping", "Personal Care", "Subscriptions", 
+            "Travel/Transit", "Vehicle Maintenance"
+        ];
+
+        // Populate the dropdown menus dynamically
+        function populateCategories() {
+            const expenseSelect = document.getElementById('category');
+            const budgetSelect = document.getElementById('budget-category');
+            
+            CATEGORIES.forEach(cat => {
+                let option1 = new Option(cat, cat);
+                let option2 = new Option(cat, cat);
+                expenseSelect.add(option1);
+                budgetSelect.add(option2);
+            });
         }
 
-        // Save monthly aggregate data
-        function saveData(data) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        }
+        // --- Data Handling Functions ---
+        function loadData() { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+        function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+        
+        function loadHistory() { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+        function saveHistory(history) { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }
+        
+        function loadBudgets() { return JSON.parse(localStorage.getItem(BUDGETS_KEY)) || {}; }
+        function saveBudgets(budgets) { localStorage.setItem(BUDGETS_KEY, JSON.stringify(budgets)); }
 
-        // Retrieve transaction history
-        function loadHistory() {
-            return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-        }
-
-        // Save transaction history
-        function saveHistory(history) {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-        }
-
-        // Get current month in YYYY-MM format
         function getCurrentMonthKey() {
             const now = new Date();
             return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         }
 
-        // Enforce the 12-month rolling limit
         function enforce12MonthLimit(data) {
             const months = Object.keys(data).sort();
             if (months.length > 12) {
                 const excess = months.length - 12;
-                for (let i = 0; i < excess; i++) {
-                    delete data[months[i]];
-                }
+                for (let i = 0; i < excess; i++) delete data[months[i]];
             }
             return data;
         }
 
-        // Add a new expense
+        // --- Action Functions ---
+
         function addExpense() {
             const amountInput = document.getElementById('amount');
             const categoryInput = document.getElementById('category');
-            
             const amount = parseFloat(amountInput.value);
             const category = categoryInput.value;
 
@@ -197,7 +246,6 @@
             let history = loadHistory();
             let monthKey = getCurrentMonthKey();
 
-            // 1. Save to Monthly Aggregates
             if (!data[monthKey]) data[monthKey] = {};
             if (!data[monthKey][category]) data[monthKey][category] = 0;
             data[monthKey][category] += amount;
@@ -205,7 +253,6 @@
             data = enforce12MonthLimit(data);
             saveData(data);
 
-            // 2. Save to Transaction History (with unique ID)
             const newLog = {
                 id: Date.now(),
                 month: monthKey,
@@ -214,56 +261,112 @@
                 dateStr: new Date().toLocaleString()
             };
             
-            history.unshift(newLog); // Add to beginning of array
-            if (history.length > 20) history.pop(); // Only keep the last 20 logs to save space
+            history.unshift(newLog);
+            if (history.length > 20) history.pop();
             saveHistory(history);
 
-            // Reset input and refresh UI
             amountInput.value = '';
             updateUI();
         }
 
-        // Delete a specific expense
         function deleteExpense(id) {
             let history = loadHistory();
             let data = loadData();
-
-            // Find the item to delete
             const logIndex = history.findIndex(item => item.id === id);
             
             if (logIndex > -1) {
                 const log = history[logIndex];
-                
-                // 1. Subtract from monthly aggregate
                 if (data[log.month] && data[log.month][log.category]) {
                     data[log.month][log.category] -= log.amount;
-                    
-                    // Clean up floating point math errors and empty categories
                     if (data[log.month][log.category] <= 0.01) {
                         delete data[log.month][log.category];
                     }
                 }
-                
-                // 2. Remove from history array
                 history.splice(logIndex, 1);
-                
-                // Save updates
                 saveData(data);
                 saveHistory(history);
                 updateUI();
             }
         }
 
-        // Render the UI
+        function setBudget() {
+            const amountInput = document.getElementById('budget-amount');
+            const category = document.getElementById('budget-category').value;
+            const amount = parseFloat(amountInput.value);
+            
+            let budgets = loadBudgets();
+
+            if (isNaN(amount) || amount <= 0) {
+                // If left blank or 0, delete the budget
+                delete budgets[category];
+                alert(`${category} budget removed.`);
+            } else {
+                budgets[category] = amount;
+                alert(`${category} budget set to $${amount.toFixed(2)}.`);
+            }
+
+            saveBudgets(budgets);
+            amountInput.value = '';
+            updateUI();
+        }
+
+        // --- Render UI ---
         function updateUI() {
             const data = loadData();
             const history = loadHistory();
+            const budgets = loadBudgets();
             const currentMonthKey = getCurrentMonthKey();
 
-            // --- Render Recent Logs ---
+            // 1. Render Current Month
+            const monthlyDiv = document.getElementById('monthly-summary');
+            monthlyDiv.innerHTML = '';
+            let currentMonthTotal = 0;
+
+            if (data[currentMonthKey] && Object.keys(data[currentMonthKey]).length > 0) {
+                for (const [cat, amt] of Object.entries(data[currentMonthKey])) {
+                    currentMonthTotal += amt;
+                    
+                    // Check budget status
+                    if (budgets[cat]) {
+                        const budgetLimit = budgets[cat];
+                        const remaining = budgetLimit - amt;
+                        const isOver = remaining < 0;
+                        const amtClass = isOver ? 'over-budget' : '';
+                        const statusText = isOver ? `Over: $${Math.abs(remaining).toFixed(2)}` : `Left: $${remaining.toFixed(2)}`;
+                        const statusClass = isOver ? 'over-budget' : 'under-budget';
+
+                        monthlyDiv.innerHTML += `
+                            <div class="breakdown-item">
+                                <div class="breakdown-header">
+                                    <span>${cat}</span>
+                                    <span class="${amtClass}">$${amt.toFixed(2)}</span>
+                                </div>
+                                <div class="budget-details">
+                                    <span>Budget: $${budgetLimit.toFixed(2)}</span>
+                                    <span class="${statusClass}">${statusText}</span>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // No budget set for this category
+                        monthlyDiv.innerHTML += `
+                            <div class="breakdown-item">
+                                <div class="breakdown-header">
+                                    <span>${cat}</span>
+                                    <span>$${amt.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                monthlyDiv.innerHTML += `<div class="total-row"><span>Total Spent</span><span>$${currentMonthTotal.toFixed(2)}</span></div>`;
+            } else {
+                monthlyDiv.innerHTML = '<div class="empty-state">No expenses logged yet this month.</div>';
+            }
+
+            // 2. Render Recent Logs
             const logsDiv = document.getElementById('recent-logs');
             logsDiv.innerHTML = '';
-
             if (history.length === 0) {
                 logsDiv.innerHTML = '<div class="empty-state">No recent transactions.</div>';
             } else {
@@ -280,25 +383,9 @@
                 });
             }
 
-            // --- Render Current Month ---
-            const monthlyDiv = document.getElementById('monthly-summary');
-            monthlyDiv.innerHTML = '';
-            let currentMonthTotal = 0;
-
-            if (data[currentMonthKey] && Object.keys(data[currentMonthKey]).length > 0) {
-                for (const [cat, amt] of Object.entries(data[currentMonthKey])) {
-                    monthlyDiv.innerHTML += `<div class="row"><span>${cat}</span><span>$${amt.toFixed(2)}</span></div>`;
-                    currentMonthTotal += amt;
-                }
-                monthlyDiv.innerHTML += `<div class="row total-row"><span>Total</span><span>$${currentMonthTotal.toFixed(2)}</span></div>`;
-            } else {
-                monthlyDiv.innerHTML = '<div class="empty-state">No expenses logged yet this month.</div>';
-            }
-
-            // --- Render Past 12 Months ---
+            // 3. Render Past 12 Months
             const yearlyDiv = document.getElementById('yearly-summary');
             yearlyDiv.innerHTML = '';
-            
             const sortedMonths = Object.keys(data).sort().reverse();
 
             if (sortedMonths.length === 0) {
@@ -309,14 +396,15 @@
                     for (const amt of Object.values(data[month])) {
                         monthTotal += amt;
                     }
-                    if (monthTotal > 0.01) { // Only show months with actual totals
+                    if (monthTotal > 0.01) {
                         yearlyDiv.innerHTML += `<div class="row"><span>${month}</span><span>$${monthTotal.toFixed(2)}</span></div>`;
                     }
                 });
             }
         }
 
-        // Initialize UI
+        // Initialize App
+        populateCategories();
         updateUI();
     </script>
 </body>
