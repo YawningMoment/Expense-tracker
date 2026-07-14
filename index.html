@@ -169,7 +169,8 @@
         </div>
 
         <h2 class="section-spacer">Set Monthly Budgets</h2>
-        <select id="budget-category"></select>
+        <!-- Added onchange event listener here -->
+        <select id="budget-category" onchange="updateBudgetInput()"></select>
         <input type="number" id="budget-amount" placeholder="Limit ($) - Leave blank to remove" step="0.01" inputmode="decimal">
         <button class="budget-btn" onclick="setBudget()">Set Budget</button>
 
@@ -184,7 +185,6 @@
         const HISTORY_KEY = 'mobile_expense_history';
         const BUDGETS_KEY = 'mobile_expense_budgets';
 
-        // Master List of Categories
         const CATEGORIES = [
             "Bills", "Dining Out", "Entertainment", "Fast Food", "Gas", 
             "Gifts", "Grocery", "Health/Medical", "Insurance", "Misc", 
@@ -192,7 +192,6 @@
             "Travel/Transit", "Vehicle Maintenance"
         ];
 
-        // Populate the dropdown menus dynamically
         function populateCategories() {
             const expenseSelect = document.getElementById('category');
             const budgetSelect = document.getElementById('budget-category');
@@ -203,9 +202,11 @@
                 expenseSelect.add(option1);
                 budgetSelect.add(option2);
             });
+
+            // Automatically check if the first item has a budget when the page loads
+            updateBudgetInput();
         }
 
-        // --- Data Handling Functions ---
         function loadData() { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
         function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
         
@@ -229,7 +230,19 @@
             return data;
         }
 
-        // --- Action Functions ---
+        // --- New Function: Update Budget Input Box ---
+        function updateBudgetInput() {
+            const category = document.getElementById('budget-category').value;
+            const budgets = loadBudgets();
+            const amountInput = document.getElementById('budget-amount');
+            
+            // If a budget exists for this category, show it. Otherwise, clear the box.
+            if (budgets[category]) {
+                amountInput.value = budgets[category];
+            } else {
+                amountInput.value = '';
+            }
+        }
 
         function addExpense() {
             const amountInput = document.getElementById('amount');
@@ -290,14 +303,13 @@
         }
 
         function setBudget() {
-            const amountInput = document.getElementById('budget-amount');
             const category = document.getElementById('budget-category').value;
+            const amountInput = document.getElementById('budget-amount');
             const amount = parseFloat(amountInput.value);
             
             let budgets = loadBudgets();
 
             if (isNaN(amount) || amount <= 0) {
-                // If left blank or 0, delete the budget
                 delete budgets[category];
                 alert(`${category} budget removed.`);
             } else {
@@ -306,18 +318,18 @@
             }
 
             saveBudgets(budgets);
-            amountInput.value = '';
+            
+            // Refresh the input box to show the newly saved state
+            updateBudgetInput(); 
             updateUI();
         }
 
-        // --- Render UI ---
         function updateUI() {
             const data = loadData();
             const history = loadHistory();
             const budgets = loadBudgets();
             const currentMonthKey = getCurrentMonthKey();
 
-            // 1. Render Current Month
             const monthlyDiv = document.getElementById('monthly-summary');
             monthlyDiv.innerHTML = '';
             let currentMonthTotal = 0;
@@ -326,7 +338,6 @@
                 for (const [cat, amt] of Object.entries(data[currentMonthKey])) {
                     currentMonthTotal += amt;
                     
-                    // Check budget status
                     if (budgets[cat]) {
                         const budgetLimit = budgets[cat];
                         const remaining = budgetLimit - amt;
@@ -348,7 +359,6 @@
                             </div>
                         `;
                     } else {
-                        // No budget set for this category
                         monthlyDiv.innerHTML += `
                             <div class="breakdown-item">
                                 <div class="breakdown-header">
@@ -364,7 +374,6 @@
                 monthlyDiv.innerHTML = '<div class="empty-state">No expenses logged yet this month.</div>';
             }
 
-            // 2. Render Recent Logs
             const logsDiv = document.getElementById('recent-logs');
             logsDiv.innerHTML = '';
             if (history.length === 0) {
@@ -383,7 +392,6 @@
                 });
             }
 
-            // 3. Render Past 12 Months
             const yearlyDiv = document.getElementById('yearly-summary');
             yearlyDiv.innerHTML = '';
             const sortedMonths = Object.keys(data).sort().reverse();
@@ -403,7 +411,6 @@
             }
         }
 
-        // Initialize App
         populateCategories();
         updateUI();
     </script>
